@@ -75,6 +75,16 @@ cd ..\backend; uv run uvicorn app.main:app --port 8000   # http://127.0.0.1:8000
 `MREAD_PROVIDER=fake` runs a deterministic provider that never touches the network. It is
 how the workflow, hand-offs, state machine, and validation are meant to be tested.
 
+**uvicorn does not reload code by itself.** After changing anything under `backend/`, stop
+the server and start it again, or run it with `--reload` while developing:
+
+```powershell
+uv run uvicorn app.main:app --port 8000 --reload
+```
+
+A stale backend is easy to spot: routes the UI offers (for example deleting a saved
+reading) answer `405 Method Not Allowed`, and `GET /api/openapi.json` does not list them.
+
 ## Where data lives
 
 | Profile | Directory | What belongs there |
@@ -143,13 +153,16 @@ exact case/workflow/profile snapshot it used), each step is a row in `step_recor
 (what that step received, what it returned, and what validation refused), and each human
 decision is a row in `decisions`. Nothing is overwritten when you run again.
 
-The Read view lists the case's readings under **Run history**: newest first, with status,
-workflow version, completed steps, a one-line excerpt, and the run id. Selecting one
-reopens that reading exactly as it was, including its evidence highlights.
+The Read view lists the case's readings under **Run history**: newest first, numbered
+from the first reading, with status, workflow version, completed steps, a one-line
+excerpt, and the run id. Selecting one reopens that reading exactly as it was, including
+its evidence highlights.
 
-Saved readings are evidence, so they are read-only here: no editing, no deletion, and an
-older run left waiting at a human step cannot be resumed — start a new run from Compose
-instead. Only the newest run of a case can still accept its decision.
+Readings are never edited. Each row can be deleted (two clicks), which removes only that
+run, its step records, and its decisions — the case, its materials, and the workflows are
+untouched, and the remaining readings keep their order and renumber. An older run left
+waiting at a human step cannot be resumed; start a new run from Compose instead. Only the
+newest run of a case can still accept its decision.
 
 ## What the runtime refuses
 

@@ -388,6 +388,16 @@ def get_run(run_id: str) -> dict[str, Any]:
         return _run_detail(conn, run_id)
 
 
+@router.delete("/runs/{run_id}")
+def delete_run(run_id: str) -> dict[str, Any]:
+    """Delete one saved reading. The case, its materials, and workflows are untouched."""
+    with _conn() as conn:
+        result = store.delete_run(conn, run_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="unknown run")
+    return result
+
+
 @router.post("/runs/{run_id}/decision")
 def submit_decision(run_id: str, body: DecisionIn) -> dict[str, Any]:
     with _conn() as conn:

@@ -25,6 +25,7 @@ const submitting = ref(false)
 const referenceText = ref('')
 const history = ref<RunSummary[]>([])
 const historyOpen = ref(false)
+const busyDelete = ref(false)
 
 let timer: number | undefined
 
@@ -62,6 +63,32 @@ function openHistoryRun(runId: string) {
   referenceText.value = ''
   decisionText.value = ''
   emit('open-run', runId)
+}
+
+const confirmingRunId = ref('')
+
+async function deleteHistoryRun(runId: string) {
+  if (confirmingRunId.value !== runId) {
+    confirmingRunId.value = runId
+    return
+  }
+  const caseId = detail.value?.run.case_id
+  busyDelete.value = true
+  try {
+    await api.deleteRun(runId)
+    confirmingRunId.value = ''
+    if (caseId) await loadHistory(caseId)
+    if (runId === props.runId) {
+      const next = history.value[0]?.id ?? ''
+      decisionText.value = ''
+      if (next) emit('open-run', next)
+      else emit('back')
+    }
+  } catch (err) {
+    emit('error', (err as Error).message)
+  } finally {
+    busyDelete.value = false
+  }
 }
 
 function shortTime(value: string): string {
@@ -234,13 +261,14 @@ onBeforeUnmount(() => window.clearTimeout(timer))
           {{ historyOpen ? '▾' : '▸' }} Run history · {{ history.length }} saved
         </button>
         <ul v-if="historyOpen" class="history-list">
-          <li v-for="entry in history" :key="entry.id">
+          <li v-for="(entry, index) in history" :key="entry.id" class="history-item">
             <button
-              class="ghost history-row"
+              class="ghost history-open"
               :class="{ current: entry.id === runId }"
               @click="openHistoryRun(entry.id)"
             >
               <span class="row" style="gap: 6px">
+                <span class="hint">#{{ history.length - index }}</span>
                 <span class="tag" :class="entry.status">{{ entry.status.replace('_', ' ') }}</span>
                 <span class="hint">v{{ entry.workflow_version }}</span>
                 <span class="hint">{{ entry.completed_steps }}/{{ entry.step_count }} steps</span>
@@ -249,10 +277,19 @@ onBeforeUnmount(() => window.clearTimeout(timer))
               <span class="history-note">{{ entry.first_note || '(no note yet)' }}</span>
               <span class="hint mono-id">{{ entry.id }}</span>
             </button>
+            <button
+              class="ghost history-delete"
+              :disabled="busyDelete"
+              :title="'Delete this reading only; materials and workflows stay'"
+              @click="deleteHistoryRun(entry.id)"
+            >
+              {{ confirmingRunId === entry.id ? 'Confirm' : '✕' }}
+            </button>
           </li>
         </ul>
         <p v-if="historyOpen" class="hint" style="margin: 4px 0 0">
-          Saved readings are evidence: they can be reopened here but not edited or deleted.
+          Readings are never edited. Deleting one removes only that record and its steps;
+          the remaining readings keep their order and renumber.
         </p>
       </div>
 
@@ -486,23 +523,43 @@ export default {
   overflow: auto;
 }
 
-.history-row {
+.history-item {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.history-open {
   display: block;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   text-align: left;
   padding: 6px 8px;
   border-color: transparent;
   background: #f2f3ef;
-  margin-bottom: 4px;
 }
 
-.history-row:hover {
+.history-open:hover {
   border-color: var(--active);
 }
 
-.history-row.current {
+.history-open.current {
   border-color: var(--active);
   background: #e7ebe4;
+}
+
+.history-delete {
+  flex: 0 0 auto;
+  border-color: transparent;
+  background: #f2f3ef;
+  color: var(--muted);
+  padding: 6px 8px;
+}
+
+.history-delete:hover:not(:disabled) {
+  border-color: #d9c3bf;
+  color: var(--danger);
 }
 
 .history-note {

@@ -67,6 +67,13 @@ async function startRun() {
 }
 
 async function openRun(id: string) {
+  if (!id) {
+    runId.value = ''
+    run.value = null
+    view.value = 'compose'
+    store()
+    return
+  }
   runId.value = id
   view.value = 'read'
   store()

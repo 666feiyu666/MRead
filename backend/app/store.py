@@ -203,6 +203,20 @@ def list_runs(conn, case_id: str | None = None) -> list[dict[str, Any]]:
     return [row_to_dict(row) for row in rows]
 
 
+def delete_run(conn, run_id: str) -> dict[str, Any] | None:
+    """Delete one saved reading and its steps/decisions. Materials and workflows stay."""
+    run = get_run(conn, run_id)
+    if not run:
+        return None
+    conn.execute("DELETE FROM decisions WHERE run_id = ?", (run_id,))
+    conn.execute("DELETE FROM step_records WHERE run_id = ?", (run_id,))
+    conn.execute("DELETE FROM runs WHERE id = ?", (run_id,))
+    remaining = conn.execute(
+        "SELECT count(*) FROM runs WHERE case_id = ?", (run["case_id"],)
+    ).fetchone()[0]
+    return {"deleted": run_id, "case_id": run["case_id"], "remaining": remaining}
+
+
 def list_run_summaries(
     conn, case_id: str | None = None, limit: int = 50
 ) -> list[dict[str, Any]]:

@@ -80,6 +80,10 @@ export const api = {
     request<RunDetail>('/runs', json({ case_id: caseId, workflow_id: workflowId })),
   getRun: (id: string) => request<RunDetail>(`/runs/${id}`),
   listRuns: (caseId: string, limit = 50) => request<RunSummary[]>(`/runs?case_id=${caseId}&limit=${limit}`),
+  deleteRun: (runId: string) =>
+    request<{ deleted: string; case_id: string; remaining: number }>(`/runs/${runId}`, {
+      method: 'DELETE',
+    }),
   decide: (runId: string, stepId: string, text: string) =>
     request<RunDetail>(`/runs/${runId}/decision`, json({ step_id: stepId, text })),
 
