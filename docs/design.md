@@ -1,78 +1,134 @@
-# A Visual-Culture Reading Desk: MVP Design
+# MRead: A Visual-Culture Multi-Agent Reading Desk
 
-## Goal
+## Purpose
 
-A researcher uploads an image, gives it a title, and uploads or pastes an article of their own choosing. The system keeps three ordered working records: A's first reading, B's response from the literature, and A's revision after the researcher's follow-up question. The interface lets the researcher check whether a given claim comes from the image, from the title, or from the article, and it preserves disagreements that remain unresolved.
+MRead helps a researcher examine how an image, its title, and user-supplied writing shape one another. The researcher uploads the materials, defines the participating agents, decides what each one receives, and inspects the resulting exchange. The useful result is a traceable record of observations, sources, interpretations, revisions, and unresolved questions.
 
-The *Night Revels of Han Xizai* reproduction supplied with this brief is a design sample, not built-in material. What a user uploads may be a complete handscroll or only a detail; the system must never infer what lies outside the frame from a cropped view.
+The supplied detail of *The Night Revels of Han Xizai* is a case for trying a workflow. It is not built-in content. A user may upload a full work or a crop; an agent must identify the limits of the visible frame when making a visual claim.
 
-## References and trade-offs
+## The correction to the first design
 
-The primary reference is [ChatDev 2.0](https://github.com/OpenBMB/ChatDev): nodes have explicit responsibilities, edges control message hand-off, the run is observable, and human nodes decide the path forward. Its [tutorial](https://github.com/OpenBMB/ChatDev/blob/main/frontend/public/tutorial-en.md) demonstrates parallel nodes, context scoping, and human feedback; the [backend documentation](https://github.com/OpenBMB/ChatDev/blob/main/docs/user_guide/en/index.md) shows the boundaries of the web UI, the run service, status streaming, and session records.
+**A and B are agent configurations, not permanent product roles.** “A reads the image and title; B reads articles and responds to A” is one workflow template. A researcher may change either agent's instructions, change which uploaded materials a step receives, reuse an agent in a later step, add another agent, or choose a different hand-off. The runtime must not infer permissions or sequence from the letters A and B.
 
-The first release uses a fixed A → B → researcher → A sequence. The interface centres on the image and the evidence, and shows a compact stage track; it offers no general workflow editor, no arbitrary tool execution, and no automatic literature search.
+The product remains specific to visual-culture research. Its configurable inputs are images, titles, articles, image regions, source passages, and prior agent records. It does not need a general-purpose coding agent platform.
 
-## Roles and information boundaries
+## What to take from ChatDev 2.0
 
-| Stage | Input | Output | Constraint |
-| --- | --- | --- | --- |
-| A, first reading | The user's image and title | Visible details, associations carried by the title, a preliminary interpretation, open questions | Receives no article; visible content and interpretation are written separately |
-| B, literature response | The article(s) supplied by the user, A's complete first reading | Sourced points from the literature, support for or challenges to A's judgements, questions for the researcher | Cites only the article(s) supplied in this run; must not invent page numbers, authors, or material that was not provided |
-| Researcher decision | The raw records from A and B | One follow-up question or request for review | The human decides the direction of inquiry; disagreements may be left standing |
-| A, revision | The original image, title, A's first reading, B's response, the researcher's question | What changed, what was kept, what still cannot be determined | Must not overwrite the first reading; must state the basis for every change |
+[ChatDev 2.0](https://github.com/OpenBMB/ChatDev) separates [agent-node configuration](https://github.com/OpenBMB/ChatDev/blob/main/docs/user_guide/en/nodes/agent.md) from a [graph of nodes and edges](https://github.com/OpenBMB/ChatDev/blob/main/docs/user_guide/en/workflow_authoring.md). Its [visual tutorial](https://github.com/OpenBMB/ChatDev/blob/main/frontend/public/tutorial-en.md) shows how messages cross edges, how a node's context is scoped, and how a human node can affect execution.
 
-The choice of article belongs to the user. B does not search the internet and does not add sources on its own. A and B may call the same image-capable model, but each call uses an independent context and a different input set.
+MRead should adopt four mechanisms:
 
-## User flow
+1. **Editable agent profiles.** A profile states a role, research task, model, and output expectations. A model can serve several agents; each invocation still has its own context.
+2. **Explicit workflow steps.** A step invokes a profile with a selected bundle of materials and prior messages. Reusing profile A in two steps does not create a new role or overwrite its earlier output.
+3. **Visible hand-offs.** An edge says which step follows and which outputs it passes. An agent never gains access to every uploaded article merely because it participates in the run.
+4. **Human participation and run records.** The researcher can pause, inspect the actual hand-off, ask a question, and continue. The interface retains both earlier and later readings.
 
-1. The user uploads a PNG, JPEG, or WebP image and gives it a title; then uploads an article as a text-extractable PDF, TXT, or MD file, or pastes the article text, with an article title and an optional source. Scanned PDFs are not OCR'd for now; the user is prompted to paste the text instead.
-2. The backend validates the input, creates a `run_id`, and stores the image and the text the user supplied.
-3. A reads the image and title first; the first reading is validated and saved, after which B receives that reading plus the article and produces a response.
-4. The frontend presents A's and B's records, their citations, and the run status. The user writes one follow-up question.
-5. A performs one revision; the frontend keeps the first reading, B's response, and the revision side by side, and the record remains available after a page reload.
+The graph editor is a means of composing a reading procedure. The main research view remains the image and its evidence, rather than a generic automation canvas.
 
-A run contains at most one researcher follow-up. Further rounds, multi-user collaboration, and research project management are left to a later version, after evaluation.
+## Core concepts
+
+| Concept | Meaning in MRead | Owner |
+| --- | --- | --- |
+| Case | A user-uploaded image, title, and optional articles or notes, each with a stable ID and provenance supplied by the user | Researcher |
+| Agent profile | Editable name, role instructions, model selection, and expected response format | Researcher |
+| Workflow step | A named invocation of one profile with explicit material and message bindings | Workflow |
+| Edge | A directed hand-off of selected outputs from one step to another | Workflow |
+| Human step | A pause that presents prior outputs and accepts a question, selection, or decision | Researcher |
+| Run | An immutable snapshot of the case, profile versions, and workflow version, plus step records and status | Runtime |
+| Evidence reference | A link from a claim to an uploaded image region, article passage, title, or earlier claim | Runtime-validated record |
+
+Profile instructions describe *how* an agent works. Step bindings determine *what it can see in this invocation*. Workflow edges determine *what it receives from other steps*. These three controls are shown separately in the UI.
+
+An agent profile may be used more than once in one workflow. Each invocation has a new step ID and output record. A selected earlier message may be passed forward; there is no implicit shared conversation or unrestricted global memory.
+
+## Example template: image, literature, return
+
+The following is an editable starting template for the supplied *Night Revels* case:
+
+```text
+User uploads image + title + article(s)
+              │
+              ▼
+Step 1 · Agent A: image + title
+              │ pass A's first reading
+              ▼
+Step 2 · Agent B: selected article(s) + A's first reading
+              │ pass B's response and selected A claims
+              ▼
+Step 3 · Researcher: inspect and ask a question
+              │ pass the question and selected prior records
+              ▼
+Step 4 · Agent A again: image + title + selected records + question
+              │
+              ▼
+End · preserve all four step records
+```
+
+The suggested A profile distinguishes visible detail, title-led association, and interpretation. The suggested B profile reads the supplied articles, responds to A, and cites those articles. These are defaults in the template, not restrictions on all agents named A or B. For example, the researcher can give B the image, remove the title from A's first step, add a third agent to question a source, or end the workflow after B.
+
+The first version should allow editing profiles, step inputs, order, and hand-offs. It supports a directed sequence of agent and human steps; the same profile may appear in several steps. Automatic cycles, model-decided routing, and parallel branches can follow once this basic exchange is evaluated. A researcher can duplicate a step to request another pass without an automatic loop.
+
+## Evidence and output
+
+Every step produces a readable note and, where claims are made, structured evidence items:
+
+- **Observation:** what is visible, with an optional region on the uploaded image.
+- **Source report:** what a user-supplied article says, linked to that article and a passage when available.
+- **Interpretation:** a claim that explains or connects material, linked to the observations or source reports it uses.
+- **Question or disagreement:** what remains open and which earlier claim it addresses.
+
+These are claim types, not agent types. Any agent can produce them if its task calls for them. A model response is treated as untrusted: the backend validates structure, referenced asset IDs, and passage or region bounds. A valid reference does not prove that the source supports the claim; the researcher must be able to inspect the underlying material.
+
+Original source wording remains visible when quoted. The interface labels paraphrases and translations so neither is presented as a quotation. Later interpretations and revisions are appended; earlier records remain available.
 
 ## Interface
 
-The interface is a "reading desk": the image occupies the main area on the left and can be zoomed; the right-hand column shows, in order, the user's article, A's first reading, B's response, and the follow-up input. A stage track at the top states plainly which step is current. Model output is grouped as "visible details / what the title suggests / interpretation" and "points from the literature / response / open questions", so that everything is not flattened into a single conclusion.
+The interface has three connected views:
 
-Visual direction: deep ink blue `#23343b` as the image mount, off-white `#f1f2ee` for the work area, mineral blue-green `#477575` to mark actionable state, copper brown `#a47b4e` to mark citations, and `#1c292e` for text. Body copy uses the system sans-serif stack; work titles fall back to a Chinese serif stack. Colour only aids recognition; every label keeps its wording.
+1. **Prepare:** upload a PNG, JPEG, or WebP image; enter its title; upload text-extractable PDF, TXT, or MD articles or paste text. Give each article a title and optional bibliographic information. A scanned PDF without extractable text prompts the user to supply text.
+2. **Compose:** a compact canvas inspired by ChatDev's graph UI. Agent cards show profile name and model; selecting a card opens its role instructions and the exact materials bound to that step. An edge inspector shows which outputs it passes. The researcher can add or reuse a profile and insert a human step. A preview lists exactly what each model call will receive.
+3. **Read:** a zoomable image and article viewer sit beside a chronological exchange. Selecting an evidence item highlights its image region or source passage. The current workflow step is visible; a human step presents a clear question or decision input. The researcher can compare an agent's first and later readings without losing either.
 
-## Technical structure
+The graph is visible enough to explain the exchange but does not replace the reading surface. ChatDev 2.0 uses Vue 3, Vite, and Vue Flow in its [frontend](https://github.com/OpenBMB/ChatDev/blob/main/frontend/package.json); this is a reasonable implementation reference for the compose view. The rest of the UI should be designed around visual comparison and source inspection.
+
+Visual direction: deep ink blue `#23343b` for the image mount, off-white `#f1f2ee` for the reading surface, mineral blue-green `#477575` for active controls, copper brown `#a47b4e` for references, and `#1c292e` for text. Labels always carry meaning independently of colour.
+
+## Runtime and storage
 
 ```text
-Vue 3 / Vite frontend
-  ├─ image and article input, upload validation, stage track
-  ├─ A / B / A records and the researcher's follow-up
-  └─ polling of run status
-          │ HTTP JSON
-          ▼
+Vue 3 / Vite UI
+  ├─ case materials and source viewer
+  ├─ agent-profile and workflow-step editor
+  └─ run timeline, evidence links, human decisions
+             │
+             ▼
 FastAPI application
-  ├─ input validation and file storage
-  ├─ fixed-flow controller: A → B → wait for follow-up → A
-  ├─ model adapter: OpenAI-compatible Chat Completions API
-  └─ SQLite: run state, user material, raw and validated model output
+  ├─ upload and source validation
+  ├─ graph validation and deterministic step scheduler
+  ├─ provider adapters and response validation
+  └─ SQLite + local asset store for profiles, workflow versions, runs, and evidence
 ```
 
-The frontend only displays and submits decisions; state transitions happen in the backend. Model keys are read from the server environment only. Every model response is parsed and validated; any article number B cites must belong to this run's user input. The image and the article text are never written to application logs.
+The UI submits a workflow definition; the backend validates it before any model call. Each run snapshots the exact profile, model, asset, and edge configuration used. The scheduler assembles each step's payload from its bindings and inbound edges; profile names have no special behavior. A human step pauses the run, and only an explicit decision resumes it. Step and run states are saved before the UI reports completion.
 
-## Data and endpoints
+The first version runs locally on one machine. Model keys stay server-side. Uploaded articles and model output are data, not instructions to change permissions or workflow policy. Image bytes, article text, and keys are excluded from application logs. A failed model call or invalid response yields a visible failed step; it is not converted into a successful research note.
 
-- `POST /api/runs`: accepts a title, an image, and at least one article; returns a `run_id`.
-- `GET /api/runs/{run_id}`: returns the current state, each stage's validated output, and the article text and metadata the user supplied, so the work can be resumed after a reload.
-- `GET /api/runs/{run_id}/image`: returns the image uploaded for this run.
-- `POST /api/runs/{run_id}/followup`: while the run is waiting for the researcher, accepts one follow-up question and starts A's revision.
-- `GET /api/health`: service check; exposes no keys.
+Useful API operations are `create/update agent profile`, `create/update workflow`, `upload case material`, `start run`, `inspect run`, and `submit human decision`. The exact HTTP routes can be fixed during implementation; no endpoint should be named for A or B.
 
-States are `reading_a`, `reading_b`, `awaiting_question`, `revising_a`, `completed`, or `failed`. New runs get stable IDs. The first release is single-machine only; the service listens on the loopback address by default, and remote deployment requires authentication first. On restart, unfinished background jobs are marked failed and the stage records already saved are kept; the first release does not claim to resume automatically from an interruption.
+## MVP boundary
+
+The first implementation should include user-supplied materials, editable agent profiles, an editable sequence of steps and hand-offs, one or more human pauses, model selection per profile, a persistent run timeline, and evidence links back to the supplied image or article. It should work when two profiles share a model and when they use different configured models, provided the assigned model supports each step's inputs.
+
+The first implementation does not require automatic article retrieval, arbitrary shell or code tools, a general-purpose marketplace of agent roles, unrestricted graph cycles, multi-user collaboration, or remote deployment. These features do not help establish whether the reading exchange is useful.
 
 ## Acceptance
 
-1. The application starts with no preloaded images or articles; the user can upload an image and an article and create a run.
-2. A's request contains no article; B's request contains the article and the saved first reading from A; the revision request contains the researcher's follow-up.
-3. B's source citations are validated, and the first reading is never overwritten by the revision.
-4. After a page reload, completed stages are still viewable by run ID; a second follow-up is rejected.
-5. When the model configuration is missing, an upload is malformed, model output is invalid, or a model request fails, the interface shows an understandable error and never disguises it as a successful result.
+1. No image or article is preloaded. A researcher uploads materials and can edit the default A/B template before running it.
+2. Changing A's or B's profile instructions changes the corresponding model request; changing a step binding changes which materials it receives. A label alone never determines access.
+3. The researcher can reuse A in a later step, add another agent profile, or end after B without changing backend code.
+4. Before each call, the run record shows the exact material IDs and prior step IDs included. A fake-provider test proves that an unbound article or image is absent from that call.
+5. A human step pauses and resumes once with the recorded decision. Earlier outputs remain immutable; duplicate or stale decisions are rejected.
+6. Every evidence reference resolves to an uploaded asset or earlier record. Unsupported interpretations can remain visible as unresolved claims; the system does not force consensus.
+7. A page reload restores the case, workflow version, step statuses, and exchange. Invalid input, provider failure, and invalid model output produce explicit failure states.
 
-Implement against a fake model first to validate the flow, then run bounded tests against a real model to judge research quality. Flow tests cannot prove that art-historical judgements are sound; works familiar to the researcher must be checked item by item for image evidence, article provenance, and how the interpretation changes.
+Implementation should first verify routing and state with a fake provider. A bounded study with real models and researcher-supplied works should then assess whether the exchange makes visual evidence, article provenance, and changes of interpretation easier to examine.
