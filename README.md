@@ -136,6 +136,21 @@ provider; only real image judgement needs a vision-capable endpoint.
 A failed model call, invalid output, or a reference to material a step never received
 fails that step visibly; it is never turned into a research note.
 
+## Saved readings
+
+Every run is kept. A run is one row in `runs` (status, provider, workflow version, and the
+exact case/workflow/profile snapshot it used), each step is a row in `step_records`
+(what that step received, what it returned, and what validation refused), and each human
+decision is a row in `decisions`. Nothing is overwritten when you run again.
+
+The Read view lists the case's readings under **Run history**: newest first, with status,
+workflow version, completed steps, a one-line excerpt, and the run id. Selecting one
+reopens that reading exactly as it was, including its evidence highlights.
+
+Saved readings are evidence, so they are read-only here: no editing, no deletion, and an
+older run left waiting at a human step cannot be resumed — start a new run from Compose
+instead. Only the newest run of a case can still accept its decision.
+
 ## What the runtime refuses
 
 - **A step with nothing bound.** The run is refused before any model call, and the error

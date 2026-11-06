@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from '../api'
-import type { Evidence, Material, MaterialDetail, RunDetail, StepRecord } from '../types'
+import type { Evidence, Material, MaterialDetail, RunDetail, RunSummary, StepRecord } from '../types'
 
 const props = defineProps<{
   runId: string
@@ -12,6 +12,7 @@ const emit = defineEmits<{
   (event: 'error', message: string): void
   (event: 'updated', detail: RunDetail): void
   (event: 'back'): void
+  (event: 'open-run', runId: string): void
 }>()
 
 const detail = ref<RunDetail | null>(null)
@@ -22,8 +23,21 @@ const highlight = ref<Evidence | null>(null)
 const decisionText = ref('')
 const submitting = ref(false)
 const referenceText = ref('')
+const history = ref<RunSummary[]>([])
+const historyOpen = ref(false)
 
 let timer: number | undefined
+
+async function loadHistory(caseId: string) {
+  try {
+    history.value = await api.listRuns(caseId, 30)
+  } catch {
+    history.value = []
+  }
+}
+
+/** Only the newest run of a case may still act; older ones are read-only evidence. */
+const isLatestRun = computed(() => history.value[0]?.id === props.runId)
 
 async function load() {
   if (!props.runId) return
@@ -35,10 +49,23 @@ async function load() {
       const firstImage = props.materials.find((material) => material.kind === 'image')
       if (firstImage) await showMaterial(firstImage.id)
     }
+    await loadHistory(body.run.case_id)
     schedulePoll()
   } catch (err) {
     emit('error', (err as Error).message)
   }
+}
+
+function openHistoryRun(runId: string) {
+  if (runId === props.runId) return
+  highlight.value = null
+  referenceText.value = ''
+  decisionText.value = ''
+  emit('open-run', runId)
+}
+
+function shortTime(value: string): string {
+  return value.replace('T', ' ').replace('+00:00', 'Z')
 }
 
 function schedulePoll() {
@@ -202,6 +229,33 @@ onBeforeUnmount(() => window.clearTimeout(timer))
     </section>
 
     <aside class="pane" style="border-left: 1px solid var(--line); background: #fafbf8">
+      <div class="history">
+        <button class="ghost history-toggle" @click="historyOpen = !historyOpen">
+          {{ historyOpen ? '▾' : '▸' }} Run history · {{ history.length }} saved
+        </button>
+        <ul v-if="historyOpen" class="history-list">
+          <li v-for="entry in history" :key="entry.id">
+            <button
+              class="ghost history-row"
+              :class="{ current: entry.id === runId }"
+              @click="openHistoryRun(entry.id)"
+            >
+              <span class="row" style="gap: 6px">
+                <span class="tag" :class="entry.status">{{ entry.status.replace('_', ' ') }}</span>
+                <span class="hint">v{{ entry.workflow_version }}</span>
+                <span class="hint">{{ entry.completed_steps }}/{{ entry.step_count }} steps</span>
+                <span class="hint" style="margin-left: auto">{{ shortTime(entry.created_at) }}</span>
+              </span>
+              <span class="history-note">{{ entry.first_note || '(no note yet)' }}</span>
+              <span class="hint mono-id">{{ entry.id }}</span>
+            </button>
+          </li>
+        </ul>
+        <p v-if="historyOpen" class="hint" style="margin: 4px 0 0">
+          Saved readings are evidence: they can be reopened here but not edited or deleted.
+        </p>
+      </div>
+
       <div class="row">
         <h2 style="flex: 1">Exchange</h2>
         <span class="status" :class="detail?.run.status">{{ detail?.run.status }}</span>
@@ -268,7 +322,7 @@ onBeforeUnmount(() => window.clearTimeout(timer))
         </div>
       </div>
 
-      <div v-if="awaiting" class="card" style="border-left: 3px solid var(--ref)">
+      <div v-if="awaiting && isLatestRun" class="card" style="border-left: 3px solid var(--ref)">
         <h3>{{ awaiting.step_name }}</h3>
         <p class="hint">{{ awaiting.human_prompt }}</p>
         <textarea v-model="decisionText" rows="4" placeholder="One question or decision"></textarea>
@@ -276,6 +330,14 @@ onBeforeUnmount(() => window.clearTimeout(timer))
         <button class="primary" :disabled="submitting || !decisionText.trim()" @click="submitDecision">
           Submit decision
         </button>
+      </div>
+
+      <div v-else-if="awaiting" class="card" style="border-left: 3px solid var(--line)">
+        <h3>{{ awaiting.step_name }}</h3>
+        <p class="hint">
+          This run stopped here and was left open. It is an earlier reading, kept read-only;
+          start a new run from Compose to continue.
+        </p>
       </div>
     </aside>
   </div>
@@ -395,5 +457,81 @@ export default {
 
 .rejected .hint {
   color: var(--danger);
+}
+
+.history {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+}
+
+.history-toggle {
+  border-color: transparent;
+  padding-left: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  letter-spacing: 0.03em;
+}
+
+.history-toggle:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--text);
+}
+
+.history-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.history-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border-color: transparent;
+  background: #f2f3ef;
+  margin-bottom: 4px;
+}
+
+.history-row:hover {
+  border-color: var(--active);
+}
+
+.history-row.current {
+  border-color: var(--active);
+  background: #e7ebe4;
+}
+
+.history-note {
+  display: block;
+  color: var(--text);
+  font-size: 12.5px;
+  margin: 2px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mono-id {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+}
+
+.tag.completed {
+  border-color: var(--active);
+  color: var(--active);
+}
+
+.tag.failed {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.tag.awaiting_human {
+  border-color: var(--ref);
+  color: var(--ref);
 }
 </style>

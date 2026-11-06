@@ -203,6 +203,67 @@ def list_runs(conn, case_id: str | None = None) -> list[dict[str, Any]]:
     return [row_to_dict(row) for row in rows]
 
 
+def list_run_summaries(
+    conn, case_id: str | None = None, limit: int = 50
+) -> list[dict[str, Any]]:
+    """One row per run, with just enough to recognise it in a history list."""
+    sql = "SELECT * FROM runs"
+    params: tuple[Any, ...] = ()
+    if case_id:
+        sql += " WHERE case_id = ?"
+        params = (case_id,)
+    sql += " ORDER BY created_at DESC, rowid DESC LIMIT ?"
+    rows = conn.execute(sql, (*params, limit)).fetchall()
+    if not rows:
+        return []
+
+    run_ids = [row["id"] for row in rows]
+    placeholders = ",".join("?" for _ in run_ids)
+    records = conn.execute(
+        f"""SELECT run_id, step_id, kind, status, ordinal, output
+            FROM step_records WHERE run_id IN ({placeholders}) ORDER BY ordinal""",
+        run_ids,
+    ).fetchall()
+
+    by_run: dict[str, list[Any]] = {}
+    for record in records:
+        by_run.setdefault(record["run_id"], []).append(record)
+
+    summaries: list[dict[str, Any]] = []
+    for row in rows:
+        steps = by_run.get(row["id"], [])
+        first_note = ""
+        for record in steps:
+            if record["status"] != "completed" or record["kind"] != "agent":
+                continue
+            output = loads(record["output"], {})
+            note = output.get("note", "") if isinstance(output, dict) else ""
+            if note:
+                first_note = str(note).strip()
+                break
+        summaries.append(
+            {
+                "id": row["id"],
+                "case_id": row["case_id"],
+                "workflow_id": row["workflow_id"],
+                "workflow_version": row["workflow_version"],
+                "status": row["status"],
+                "provider": row["provider"],
+                "error": row["error"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+                "step_count": len(steps),
+                "completed_steps": sum(1 for record in steps if record["status"] == "completed"),
+                "awaiting_step_id": next(
+                    (record["step_id"] for record in steps if record["status"] == "awaiting_human"),
+                    None,
+                ),
+                "first_note": first_note[:160],
+            }
+        )
+    return summaries
+
+
 def set_run_status(conn, run_id: str, status: str, error: str = "") -> None:
     conn.execute(
         "UPDATE runs SET status = ?, error = ?, updated_at = ? WHERE id = ?",

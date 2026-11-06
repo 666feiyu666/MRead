@@ -181,6 +181,7 @@ onMounted(async () => {
         :materials="materials"
         @error="(message: string) => (error = message)"
         @updated="(detail: RunDetail) => (run = detail)"
+        @open-run="openRun"
         @back="view = 'compose'"
       />
       <MaterialsView

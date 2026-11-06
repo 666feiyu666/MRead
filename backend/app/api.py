@@ -376,9 +376,10 @@ def create_run(body: RunIn) -> dict[str, Any]:
 
 
 @router.get("/runs")
-def list_runs(case_id: str | None = None) -> list[dict[str, Any]]:
+def list_runs(case_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+    """Reading history: one summary row per run, newest first."""
     with _conn() as conn:
-        return store.list_runs(conn, case_id)
+        return store.list_run_summaries(conn, case_id, max(1, min(limit, 200)))
 
 
 @router.get("/runs/{run_id}")

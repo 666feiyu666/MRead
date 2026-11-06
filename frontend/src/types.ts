@@ -159,6 +159,10 @@ export interface RunSummary {
   error: string
   created_at: string
   updated_at: string
+  step_count?: number
+  completed_steps?: number
+  awaiting_step_id?: string | null
+  first_note?: string
 }
 
 export interface Decision {

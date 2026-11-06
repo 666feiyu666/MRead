@@ -79,7 +79,7 @@ export const api = {
   startRun: (caseId: string, workflowId: string) =>
     request<RunDetail>('/runs', json({ case_id: caseId, workflow_id: workflowId })),
   getRun: (id: string) => request<RunDetail>(`/runs/${id}`),
-  listRuns: (caseId: string) => request<RunSummary[]>(`/runs?case_id=${caseId}`),
+  listRuns: (caseId: string, limit = 50) => request<RunSummary[]>(`/runs?case_id=${caseId}&limit=${limit}`),
   decide: (runId: string, stepId: string, text: string) =>
     request<RunDetail>(`/runs/${runId}/decision`, json({ step_id: stepId, text })),
 
