@@ -141,13 +141,18 @@ class EvidenceItemIn(BaseModel):
 
 
 class AgentOutputIn(BaseModel):
-    """The JSON contract every agent step must return."""
+    """The envelope every agent step must return.
 
-    model_config = ConfigDict(extra="forbid")
+    Only the envelope is enforced here. Evidence items are validated one by one in
+    ``validate.parse_output`` so that one malformed claim cannot discard a whole reading,
+    and unknown extra keys are ignored rather than fatal.
+    """
+
+    model_config = ConfigDict(extra="ignore")
 
     note: str = Field(min_length=1, max_length=20000)
-    evidence: list[EvidenceItemIn] = Field(default_factory=list)
-    unresolved: list[str] = Field(default_factory=list)
+    evidence: list[Any] = Field(default_factory=list)
+    unresolved: list[Any] = Field(default_factory=list)
 
 
 class HumanDecisionOut(BaseModel):

@@ -24,6 +24,22 @@ export interface MaterialDetail extends Material {
   text: string
 }
 
+export interface MaterialReference {
+  workflow_id: string
+  workflow_name: string
+  workflow_version: number
+  step_id: string
+  step_name: string
+}
+
+export interface MaterialListing extends Material {
+  text_chars: number
+  references: {
+    workflows: MaterialReference[]
+    runs: number
+  }
+}
+
 export interface Profile {
   id: string
   name: string
@@ -104,10 +120,17 @@ export interface StepPayload {
   image_parts_sent?: number
 }
 
+export interface RejectedEvidence {
+  type: string
+  text: string
+  reason: string
+}
+
 export interface StepOutput {
   note?: string
   evidence?: Evidence[]
   unresolved?: string[]
+  rejected?: RejectedEvidence[]
   decision_id?: string
 }
 

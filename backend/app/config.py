@@ -27,7 +27,7 @@ def _load_dotenv(path: Path) -> None:
             os.environ[key] = value
 
 
-_load_dotenv(REPO_ROOT / ".env")
+_load_dotenv(Path(os.environ.get("MREAD_ENV_FILE") or REPO_ROOT / ".env"))
 
 # Two data profiles keep development work and real research apart:
 #   dev   -> <repo>/data/dev     scratch runs, fake-model trials, safe to delete

@@ -17,13 +17,17 @@ without overwriting its earlier output.
 
 ## Run it
 
-Two data profiles keep experiments and real work apart. **Development is the default**:
+Two data profiles keep experiments and real work apart. **Development is the default.**
 
-```bash
+The `VAR=value command` form only works in POSIX shells (Git Bash, WSL, macOS, Linux).
+In **Windows PowerShell** the variable must be set first in the same session:
+
+```powershell
 # 1. backend — dev profile, fake model, throwaway data under data/dev
 cd backend
 uv sync
-MREAD_PROVIDER=fake uv run uvicorn app.main:app --port 8000
+$env:MREAD_PROVIDER = "fake"
+uv run uvicorn app.main:app --port 8000
 
 # 2. frontend, in a second shell
 cd frontend
@@ -31,20 +35,41 @@ npm install
 npm run dev            # http://127.0.0.1:5173, proxies /api to :8000
 ```
 
-For the reading desk you actually keep cases in, start the backend with the daily
-profile:
+Same thing in Git Bash / WSL / macOS / Linux:
 
 ```bash
-cd backend
-MREAD_PROFILE=daily uv run uvicorn app.main:app --port 8000
+cd backend && uv sync
+MREAD_PROVIDER=fake uv run uvicorn app.main:app --port 8000
 ```
+
+In `cmd.exe` use `set MREAD_PROVIDER=fake` on its own line before the same command, and
+clear a variable again with `Remove-Item Env:MREAD_PROFILE` (PowerShell) or
+`set MREAD_PROFILE=` (cmd).
+
+### Daily use without retyping the variable
+
+The backend reads a repository-root `.env` at startup, so the durable setting belongs
+there — an explicitly set environment variable still wins over it:
+
+```ini
+# .env
+MREAD_PROFILE=daily
+```
+
+Then everyday startup is just:
+
+```powershell
+cd backend
+uv run uvicorn app.main:app --port 8000
+```
+
+and an experiment can override it for one shell with `$env:MREAD_PROFILE = "dev"`.
 
 Or build the frontend once and let the backend serve it:
 
-```bash
-cd frontend && npm run build
-cd ../backend && MREAD_PROFILE=daily uv run uvicorn app.main:app --port 8000
-# http://127.0.0.1:8000
+```powershell
+cd frontend; npm run build
+cd ..\backend; uv run uvicorn app.main:app --port 8000   # http://127.0.0.1:8000
 ```
 
 `MREAD_PROVIDER=fake` runs a deterministic provider that never touches the network. It is
@@ -102,9 +127,30 @@ provider; only real image judgement needs a vision-capable endpoint.
 3. **Read** — the image and the article sit beside the exchange. Selecting an evidence
    item highlights its image region or the cited character range in the article. A human
    step pauses the run: write one decision, and the remaining steps continue.
+4. **Materials** — every upload in the case, in one place, with what it is and where it is
+   used. Selecting a row shows the image at full size or the whole text, the stored
+   metadata (id, mime, size, characters, upload time), and the steps that bind it. Title
+   and provenance are editable; deleting removes the file, unbinds the material from every
+   workflow step (bumping that workflow's version), and leaves past run records intact.
 
 A failed model call, invalid output, or a reference to material a step never received
 fails that step visibly; it is never turned into a research note.
+
+## What the runtime refuses
+
+- **A step with nothing bound.** The run is refused before any model call, and the error
+  names the step. Compose marks such a step `no material` and says what to do — a model
+  asked to read nothing tends to answer from habit, which is exactly what this project
+  exists to prevent.
+- **An unsupported citation.** An evidence item that names material the step never
+  received, an image region outside the frame or with a zero width/height, a passage past
+  the end of the supplied text, or a reference to a claim that does not exist is dropped
+  from the record and listed under **Rejected by validation** with the reason. The note,
+  the claims that do resolve, and the open questions are kept — the researcher can see
+  both what the model said and what the runtime refused. A malformed item (wrong type, a
+  bare string) is rejected the same way, one item at a time.
+- **Unreadable output.** A response with no usable `note`, or that is not a JSON object at
+  all, fails the step outright, with a short readable reason.
 
 ## Tests
 

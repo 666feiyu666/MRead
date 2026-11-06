@@ -116,6 +116,56 @@ async def upload_asset(
         return {key: value for key, value in asset.items() if key not in {"stored_path", "text_content"}}
 
 
+@router.get("/cases/{case_id}/materials")
+def list_case_materials(case_id: str) -> dict[str, Any]:
+    """Every material of a case, with where it is bound and whether a run has used it."""
+    with _conn() as conn:
+        if not store.get_case(conn, case_id):
+            raise HTTPException(status_code=404, detail="unknown case")
+        assets = store.list_assets(conn, case_id)
+        references = store.asset_references(conn, case_id)
+    for asset in assets:
+        asset["references"] = references.get(asset["id"], {"workflows": [], "runs": 0})
+    return {"assets": assets}
+
+
+class AssetPatchIn(BaseModel):
+    title: str | None = None
+    provenance: str | None = None
+
+
+@router.patch("/assets/{asset_id}")
+def patch_asset(asset_id: str, body: AssetPatchIn) -> dict[str, Any]:
+    with _conn() as conn:
+        asset = store.get_asset(conn, asset_id)
+        if not asset:
+            raise HTTPException(status_code=404, detail="unknown material")
+        title = body.title if body.title is not None else asset["title"]
+        provenance = body.provenance if body.provenance is not None else asset["provenance"]
+        conn.execute(
+            "UPDATE assets SET title = ?, provenance = ? WHERE id = ?",
+            (title, provenance, asset_id),
+        )
+        asset = store.get_asset(conn, asset_id)
+        return {
+            "id": asset["id"],
+            "case_id": asset["case_id"],
+            "kind": asset["kind"],
+            "title": asset["title"],
+            "provenance": asset["provenance"],
+        }
+
+
+@router.delete("/assets/{asset_id}")
+def delete_asset(asset_id: str) -> dict[str, Any]:
+    """Delete a material, remove it from every workflow step, and drop its file."""
+    with _conn() as conn:
+        result = store.delete_asset(conn, asset_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="unknown material")
+    return result
+
+
 @router.get("/assets/{asset_id}")
 def get_asset(asset_id: str) -> dict[str, Any]:
     with _conn() as conn:

@@ -62,6 +62,7 @@ const nodes = computed<FlowNode[]>(() =>
       kind: step.kind,
       profile: profileName(step.profile_id),
       materials: step.material_ids.length,
+      empty: step.kind === 'agent' && step.material_ids.length === 0,
       current: step.id === selectedId.value,
     },
   })),
@@ -261,10 +262,13 @@ async function createProfile() {
           @node-drag-stop="onNodeDragStop"
         >
           <template #node-mread="{ data }">
-            <div class="step-node" :class="[data.kind, { current: data.current }]">
+            <div class="step-node" :class="[data.kind, { current: data.current, empty: data.empty }]">
               <strong>{{ data.label }}</strong>
               <div class="small">{{ data.kind === 'human' ? 'human step' : data.profile }}</div>
-              <div class="small">{{ data.materials }} material(s)</div>
+              <div class="small">
+                {{ data.materials }} material(s)
+                <template v-if="data.empty"> · no material</template>
+              </div>
             </div>
           </template>
         </VueFlow>
@@ -313,6 +317,14 @@ async function createProfile() {
             <span>{{ material.title || material.id }}</span>
           </label>
           <p v-if="materials.length === 0" class="empty">No materials in this case.</p>
+          <p
+            v-if="selected.kind === 'agent' && selected.material_ids.length === 0"
+            class="hint"
+            style="color: var(--danger)"
+          >
+            This step has no material bound, so a run will be refused. Bind an image or article
+            above, or remove the step.
+          </p>
         </span>
       </div>
       <p v-else class="hint">Select a step on the canvas to edit what it receives.</p>
@@ -401,6 +413,10 @@ async function createProfile() {
 
 .step-node.human {
   border-left-color: var(--ref);
+}
+
+.step-node.empty {
+  border-left-color: var(--danger);
 }
 
 .step-node.current {

@@ -255,6 +255,17 @@ onBeforeUnmount(() => window.clearTimeout(timer))
             <li v-for="line in record.output.unresolved" :key="line">{{ line }}</li>
           </ul>
         </div>
+
+        <div v-if="record.output?.rejected?.length" class="rejected">
+          <h3>Rejected by validation</h3>
+          <ul>
+            <li v-for="(item, index) in record.output.rejected" :key="index">
+              <span class="tag question">{{ item.type.replace('_', ' ') }}</span>
+              <span>{{ item.text }}</span>
+              <div class="hint">{{ item.reason }}</div>
+            </li>
+          </ul>
+        </div>
       </div>
 
       <div v-if="awaiting" class="card" style="border-left: 3px solid var(--ref)">
@@ -361,5 +372,28 @@ export default {
   margin: 4px 0 0;
   padding-left: 18px;
   color: var(--muted);
+}
+
+.rejected {
+  margin-top: 10px;
+  border-top: 1px dashed #d9c3bf;
+  padding-top: 8px;
+}
+
+.rejected ul {
+  margin: 4px 0 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.rejected li {
+  border-left: 2px solid var(--danger);
+  padding-left: 8px;
+  margin-bottom: 8px;
+  color: #5b4a47;
+}
+
+.rejected .hint {
+  color: var(--danger);
 }
 </style>

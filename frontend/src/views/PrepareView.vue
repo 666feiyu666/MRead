@@ -117,10 +117,19 @@ async function uploadArticle() {
 
       <div class="card">
         <h3>Case</h3>
-        <div class="row" style="margin-bottom: 10px">
-          <input v-model="newTitle" placeholder="Title of the work or case" style="flex: 1; min-width: 220px" />
+        <div class="row" style="margin-bottom: 6px">
+          <input
+            v-model="newTitle"
+            placeholder="Title of the work or case"
+            style="flex: 1; min-width: 220px"
+            @keydown.enter="createCase"
+          />
           <button class="primary" :disabled="busy || !newTitle.trim()" @click="createCase">Create case</button>
         </div>
+        <p class="hint" style="margin-bottom: 10px">
+          <template v-if="!newTitle.trim()">Type a title to enable “Create case”, then press Enter or click the button.</template>
+          <template v-else>Press Enter or click “Create case”.</template>
+        </p>
         <ul v-if="cases.length" class="material-list">
           <li v-for="item in cases" :key="item.id">
             <button class="ghost" :disabled="item.id === activeCase?.id" @click="emit('select-case', item.id)">

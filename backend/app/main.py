@@ -26,6 +26,14 @@ def create_app() -> FastAPI:
     )
     app.include_router(api.router)
 
+    @app.middleware("http")
+    async def _no_store_api(request, call_next):
+        """API answers are live data: never let the browser show a stale list."""
+        response = await call_next(request)
+        if request.url.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.on_event("startup")
     def _startup() -> None:
         init_db()

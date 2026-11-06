@@ -51,20 +51,17 @@ def test_record_lists_exact_materials_and_prior_steps(client, case, workflow, ma
     assert records["Literature response"]["payload"]["prior_step_ids"] == ["step1"]
 
 
-def test_unbinding_removes_material_from_the_call(client, case, workflow, materials, fake):
+def test_a_step_with_no_material_is_refused_before_running(client, case, workflow, materials, fake):
+    """An agent step with nothing bound never reaches the model."""
     definition = workflow["definition"]
     definition["steps"][0]["material_ids"] = []
     _save_workflow(workflow, definition)
 
     run = client.post("/api/runs", json={"case_id": case["id"], "workflow_id": workflow["id"]})
-    assert run.status_code == 200, run.text
-
-    first_call = fake.calls[0]
-    assert materials["image"]["id"] not in first_call["user_text"]
-    assert first_call["image_asset_ids"] == []
-    assert "MATERIAL asset_id" not in first_call["user_text"]
-
-    assert run.json()["records"][0]["payload"]["material_ids"] == []
+    assert run.status_code == 400, run.text
+    assert "no material bound" in run.json()["detail"]
+    assert "First reading" in run.json()["detail"]
+    assert fake.calls == [], "no model call may be spent on an empty step"
 
 
 def test_giving_the_literature_agent_the_image_changes_its_call(client, case, workflow, materials, fake):

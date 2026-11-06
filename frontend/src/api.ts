@@ -3,6 +3,8 @@ import type {
   Decision,
   Material,
   MaterialDetail,
+  MaterialListing,
+  MaterialReference,
   PreviewStep,
   Profile,
   RunDetail,
@@ -49,6 +51,14 @@ export const api = {
   listMaterials: (caseId: string) =>
     request<{ assets: Material[] }>(`/cases/${caseId}`).then((body) => body.assets),
   material: (id: string) => request<MaterialDetail>(`/assets/${id}`),
+  materials: (caseId: string) => request<{ assets: MaterialListing[] }>(`/cases/${caseId}/materials`),
+  renameMaterial: (id: string, body: { title?: string; provenance?: string }) =>
+    request<{ id: string; title: string; provenance: string }>(`/assets/${id}`, json(body, 'PATCH')),
+  deleteMaterial: (id: string) =>
+    request<{ deleted: string; unbound_from: MaterialReference[]; file_removed: boolean }>(
+      `/assets/${id}`,
+      { method: 'DELETE' },
+    ),
   uploadMaterial: (caseId: string, form: FormData) =>
     request<Material>(`/cases/${caseId}/assets`, { method: 'POST', body: form }),
 

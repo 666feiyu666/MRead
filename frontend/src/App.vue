@@ -5,8 +5,9 @@ import type { Case, Material, Profile, RunDetail, RuntimeConfig, Workflow } from
 import PrepareView from './views/PrepareView.vue'
 import ComposeView from './views/ComposeView.vue'
 import ReadView from './views/ReadView.vue'
+import MaterialsView from './views/MaterialsView.vue'
 
-const view = ref<'prepare' | 'compose' | 'read'>('prepare')
+const view = ref<'prepare' | 'compose' | 'read' | 'materials'>('prepare')
 const cases = ref<Case[]>([])
 const activeCase = ref<Case | null>(null)
 const materials = ref<Material[]>([])
@@ -88,10 +89,15 @@ onMounted(async () => {
     return
   }
 
-  if (state.caseId) await selectCase(state.caseId)
+  let restoredCase = false
+  if (state.caseId) {
+    error.value = ''
+    await selectCase(state.caseId)
+    restoredCase = !!activeCase.value
+  }
 
-  // A stored run may point at data that no longer exists (deleted database, other
-  // working copy). Verify it before restoring the read view instead of showing an empty one.
+  // A stored run may point at data that no longer exists (deleted database, another data
+  // profile). Verify it before restoring the read view instead of showing an empty one.
   let restoredRun = false
   if (state.runId) {
     try {
@@ -105,10 +111,15 @@ onMounted(async () => {
   }
 
   if (restoredRun && state.view === 'read') view.value = 'read'
+  else if (activeCase.value && state.view === 'materials') view.value = 'materials'
   else if (activeCase.value) view.value = state.view === 'compose' ? 'compose' : 'prepare'
   else view.value = 'prepare'
 
-  if (!restoredRun && state.runId) error.value = ''
+  // Say plainly that the old session belongs to something this profile does not hold.
+  const profile = config.value?.data_profile
+  if (!restoredCase && !restoredRun && (state.caseId || state.runId)) {
+    error.value = `The previous session was stored in another data profile${profile ? ` (now using "${profile}")` : ''}. Starting fresh.`
+  }
   store()
 })
 </script>
@@ -128,6 +139,13 @@ onMounted(async () => {
           2 · Compose
         </button>
         <button :class="{ active: view === 'read' }" :disabled="!runId" @click="view = 'read'">3 · Read</button>
+        <button
+          :class="{ active: view === 'materials' }"
+          :disabled="!activeCase"
+          @click="view = 'materials'"
+        >
+          4 · Materials
+        </button>
       </nav>
     </header>
 
@@ -158,12 +176,18 @@ onMounted(async () => {
         @profiles-changed="(next: Profile[]) => (profiles = next)"
       />
       <ReadView
-        v-else
+        v-else-if="view === 'read'"
         :run-id="runId"
         :materials="materials"
         @error="(message: string) => (error = message)"
         @updated="(detail: RunDetail) => (run = detail)"
         @back="view = 'compose'"
+      />
+      <MaterialsView
+        v-else
+        :case-id="activeCase?.id ?? ''"
+        @changed="refreshCase"
+        @error="(message: string) => (error = message)"
       />
     </div>
   </div>

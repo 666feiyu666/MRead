@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from .db import loads, row_to_dict
@@ -36,7 +37,8 @@ def list_cases(conn) -> list[dict[str, Any]]:
 # ----------------------------------------------------------------------- assets
 
 ASSET_PUBLIC = (
-    "id, case_id, kind, title, provenance, filename, mime, size, created_at"
+    "id, case_id, kind, title, provenance, filename, mime, size, created_at, "
+    "length(text_content) AS text_chars"
 )
 
 
@@ -305,3 +307,99 @@ def evidence_index(conn, run_id: str) -> dict[str, dict[str, Any]]:
 
 def loads_json(value: str, default):
     return loads(value, default)
+
+
+# --------------------------------------------------------------- material upkeep
+
+
+def asset_references(conn, case_id: str) -> dict[str, dict[str, Any]]:
+    """Where each material of a case is used: workflow step bindings and run usage."""
+    references: dict[str, dict[str, Any]] = {
+        asset_id: {"workflows": [], "runs": 0} for asset_id in case_material_ids(conn, case_id)
+    }
+
+    for workflow in list_workflows(conn, case_id):
+        for step in workflow["definition"].get("steps", []):
+            for material_id in step.get("material_ids", []):
+                entry = references.setdefault(material_id, {"workflows": [], "runs": 0})
+                entry["workflows"].append(
+                    {
+                        "workflow_id": workflow["id"],
+                        "workflow_name": workflow["name"],
+                        "workflow_version": workflow["version"],
+                        "step_id": step.get("id"),
+                        "step_name": step.get("name"),
+                    }
+                )
+
+    rows = conn.execute(
+        """SELECT record.run_id AS run_id, record.payload AS payload
+           FROM step_records AS record
+           JOIN runs AS run ON run.id = record.run_id
+           WHERE run.case_id = ?""",
+        (case_id,),
+    ).fetchall()
+    seen_runs: dict[str, set[str]] = {}
+    for row in rows:
+        payload = loads(row["payload"], {})
+        if not isinstance(payload, dict):
+            continue
+        for material_id in payload.get("material_ids", []):
+            seen_runs.setdefault(material_id, set()).add(row["run_id"])
+    for material_id, run_ids in seen_runs.items():
+        if material_id in references:
+            references[material_id]["runs"] = len(run_ids)
+    return references
+
+
+def unbind_asset(conn, asset_id: str) -> list[dict[str, Any]]:
+    """Remove a material from every workflow step that binds it. Bumps each version."""
+    changed: list[dict[str, Any]] = []
+    rows = conn.execute("SELECT id, case_id, name, version, definition FROM workflows").fetchall()
+    for row in rows:
+        definition = loads(row["definition"], {})
+        touched = False
+        for step in definition.get("steps", []):
+            material_ids = step.get("material_ids", [])
+            if asset_id in material_ids:
+                step["material_ids"] = [mid for mid in material_ids if mid != asset_id]
+                touched = True
+                changed.append(
+                    {
+                        "workflow_id": row["id"],
+                        "workflow_name": row["name"],
+                        "step_id": step.get("id"),
+                        "step_name": step.get("name"),
+                    }
+                )
+        if touched:
+            conn.execute(
+                """UPDATE workflows SET definition = ?, version = version + 1, updated_at = ?
+                   WHERE id = ?""",
+                (json.dumps(definition), utcnow(), row["id"]),
+            )
+    return changed
+
+
+def delete_asset(conn, asset_id: str) -> dict[str, Any] | None:
+    """Delete a material row, its file when no other row shares it, and its bindings."""
+    asset = get_asset(conn, asset_id)
+    if not asset:
+        return None
+    unbound = unbind_asset(conn, asset_id)
+    shared = conn.execute(
+        "SELECT count(*) FROM assets WHERE stored_path = ? AND id != ?",
+        (asset["stored_path"], asset_id),
+    ).fetchone()[0]
+    conn.execute("DELETE FROM assets WHERE id = ?", (asset_id,))
+
+    file_removed = False
+    if not shared and asset["stored_path"]:
+        path = Path(asset["stored_path"])
+        try:
+            if path.is_file():
+                path.unlink()
+                file_removed = True
+        except OSError:
+            file_removed = False
+    return {"deleted": asset_id, "unbound_from": unbound, "file_removed": file_removed}

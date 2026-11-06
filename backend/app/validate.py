@@ -40,6 +40,12 @@ def parse_output(
 ) -> dict[str, Any]:
     """Parse and validate one agent response.
 
+    A response that is not a usable JSON object fails the step: there is nothing to keep.
+    Individual evidence items that cite material this step never received are dropped and
+    reported under ``rejected`` instead, so the readable note and the claims that do
+    resolve survive. The researcher needs to see both what the model said and what the
+    runtime refused.
+
     ``allowed_assets`` are the materials bound to this step. ``referenced_assets`` may
     name further assets that earlier records already cited; those can be named but their
     text was not supplied here, so quoting a passage from them is refused.
@@ -58,32 +64,89 @@ def parse_output(
     try:
         parsed = AgentOutputIn.model_validate(data)
     except Exception as exc:  # pydantic ValidationError
-        raise OutputError(f"the model response does not match the required shape: {exc}") from exc
+        raise OutputError(
+            f"the model response does not match the required shape: {_describe(exc)}"
+        ) from exc
 
     referenced = referenced_assets or set()
     prior = prior_index or {}
     able_to_name = set(allowed_assets) | referenced
 
     evidence: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
 
-    for item in parsed.evidence:
-        record = _validate_item(
-            item,
-            allowed_assets=allowed_assets,
-            able_to_name=able_to_name,
-            asset_text_lengths=asset_text_lengths,
-            prior=prior,
-            earlier=seen_ids,
-        )
+    for raw_item in parsed.evidence:
+        if not isinstance(raw_item, dict):
+            rejected.append(
+                {
+                    "type": "unknown",
+                    "text": str(raw_item)[:400],
+                    "reason": "an evidence item must be a JSON object",
+                }
+            )
+            continue
+
+        try:
+            item = EvidenceItemIn.model_validate(raw_item)
+        except Exception as exc:  # pydantic ValidationError on this single item
+            rejected.append(
+                {
+                    "type": str(raw_item.get("type", "unknown"))[:40],
+                    "text": str(raw_item.get("text", ""))[:400],
+                    "reason": _describe(exc),
+                }
+            )
+            continue
+
+        try:
+            record = _validate_item(
+                item,
+                allowed_assets=allowed_assets,
+                able_to_name=able_to_name,
+                asset_text_lengths=asset_text_lengths,
+                prior=prior,
+                earlier=seen_ids,
+            )
+        except OutputError as exc:
+            rejected.append(
+                {
+                    "type": item.type.value,
+                    "text": item.text[:400],
+                    "reason": str(exc),
+                }
+            )
+            continue
         seen_ids.add(record["id"])
         evidence.append(record)
 
     return {
         "note": parsed.note.strip(),
         "evidence": evidence,
-        "unresolved": [line.strip() for line in parsed.unresolved if line.strip()],
+        "unresolved": [
+            line.strip() for line in parsed.unresolved if isinstance(line, str) and line.strip()
+        ],
+        "rejected": rejected,
     }
+
+
+def _describe(exc: Exception, limit: int = 3) -> str:
+    """A short, readable reason for one rejected item instead of a pydantic dump."""
+    errors = getattr(exc, "errors", None)
+    if callable(errors):
+        try:
+            items = errors()
+        except Exception:  # noqa: BLE001 - never let reporting itself fail
+            items = []
+        if items:
+            parts = []
+            for item in items[:limit]:
+                location = ".".join(str(part) for part in item.get("loc", ())) or "value"
+                message = str(item.get("msg", "is not valid"))
+                parts.append(f"{location} {message}".strip())
+            suffix = f" (and {len(items) - limit} more)" if len(items) > limit else ""
+            return "; ".join(parts) + suffix
+    return str(exc)
 
 
 def _validate_item(
@@ -153,15 +216,22 @@ OUTPUT_CONTRACT = """Reply with one JSON object and nothing else:
       "type": "observation | source_report | interpretation | question",
       "text": "one claim",
       "asset_id": "id of a material you were given, or null",
-      "region": {"x": 0.0, "y": 0.0, "width": 0.0, "height": 0.0},
-      "passage": {"start": 0, "end": 0},
       "refers_to": ["id of an evidence item or step record you were given"]
     }
   ],
   "unresolved": ["what is still open or disputed"]
 }
-Rules: use only the materials listed in this message; never cite an article, author,
-page, or quotation that was not supplied; name an image region only for a supplied image
-and only within the visible frame; a passage must be a character range inside supplied
-text; if the evidence does not settle a question, say so under "unresolved" instead of
-concluding."""
+
+Two optional keys may be added to an evidence item, and only when they are real:
+- "region": {"x": 0.10, "y": 0.10, "width": 0.30, "height": 0.30} — where the detail sits
+  inside the supplied image, as fractions 0..1 measured from the top-left corner. The
+  numbers here are only an illustration; choose the ones that match what you describe.
+  Width and height must be greater than zero, and the box must stay inside the frame.
+  Leave the key out when you cannot place the detail. Use x 0, y 0, width 1, height 1
+  only when the claim really is about the entire frame.
+- "passage": {"start": 12, "end": 48} — character offsets into the supplied text. Leave
+  the key out unless you are pointing at a specific span of that text.
+
+Rules: use only the materials listed in this message; never name a material that is not
+listed above; never cite an article, author, page, or quotation that was not supplied; if
+the evidence does not settle a question, say so under "unresolved" instead of concluding."""

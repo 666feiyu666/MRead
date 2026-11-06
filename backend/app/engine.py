@@ -82,6 +82,15 @@ def plan_run(conn, *, case_id: str, workflow_id: str, provider_name: str) -> dic
         asset_kinds=kinds,
     )
 
+    # An agent step with nothing bound would still be called, and a model asked to read
+    # nothing tends to answer confidently from habit. Refuse before spending a call.
+    for item in plan.steps:
+        if item.step["kind"] == "agent" and not item.step.get("material_ids"):
+            raise RunError(
+                f"step {item.step['name']!r} has no material bound. Bind an image or an "
+                "article to it, or remove the step, before starting a run."
+            )
+
     profiles: dict[str, Any] = {}
     for planned in plan.steps:
         profile_id = planned.step.get("profile_id")
